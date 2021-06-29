@@ -1,4 +1,4 @@
-import readline from "readline";
+import * as readline from "readline";
 
 const rl = readline.createInterface(process.stdin, process.stdout);
 
@@ -75,13 +75,7 @@ function loop() {
 
     const [head, ...body] = player.body;
 
-    if (
-        head.x > boardSize - 1 ||
-        head.x < 0 ||
-        head.y > boardSize - 1 ||
-        head.y < 0 ||
-        body.some(({ x, y }) => head.x === x && head.y === y)
-    ) {
+    if (head.x > boardSize - 1 || head.x < 0 || head.y > boardSize - 1 || head.y < 0 || body.some(({ x, y }) => head.x === x && head.y === y)) {
         board.splice(
             0,
             boardSize,
