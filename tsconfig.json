@@ -20,6 +20,6 @@
         "resolveJsonModule": true,
         "lib": ["esnext", "esnext.asynciterable"]
     },
-    "include": ["ts/**/*.ts", "env.d.ts"],
+    "include": ["src/**/*.ts", "env.d.ts"],
     "exclude": ["node_modules"]
 }

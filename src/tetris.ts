@@ -313,6 +313,8 @@ interface Player {
     }
 
     process.stdin.on("keypress", (_, key) => {
+        if (!key) return;
+
         if (key.name === "left") playerMove(-1);
         else if (key.name === "right") playerMove(1);
         else if (key.name === "down") playerDrop();
