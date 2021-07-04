@@ -29,17 +29,22 @@ interface Player {
             description: "sets fps",
             type: "number",
         })
+        .option("ascii", {
+            alias: "a",
+            description: "use ascii chars",
+            type: "boolean",
+        })
         .parseSync();
 
     const { supportsColor } = chalk;
 
     const tetris = `\
-        ████████╗███████╗████████╗██████╗ ██╗███████╗
-        ╚══██╔══╝██╔════╝╚══██╔══╝██╔══██╗██║██╔════╝
-        ██║   █████╗     ██║   ██████╔╝██║███████╗
-        ██║   ██╔══╝     ██║   ██╔══██╗██║╚════██║
-        ██║   ███████╗   ██║   ██║  ██║██║███████║
-        ╚═╝   ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚══════╝`;
+████████╗███████╗████████╗██████╗ ██╗███████╗
+╚══██╔══╝██╔════╝╚══██╔══╝██╔══██╗██║██╔════╝
+   ██║   █████╗     ██║   ██████╔╝██║███████╗
+   ██║   ██╔══╝     ██║   ██╔══██╗██║╚════██║
+   ██║   ███████╗   ██║   ██║  ██║██║███████║
+   ╚═╝   ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚══════╝`;
 
     console.clear();
 
@@ -144,11 +149,13 @@ interface Player {
         const side = supportsColor ? chalk.bold("│") : "│";
         const bottom = "└" + "─".repeat(matrix[0].length * 2) + "┘";
 
-        console.log(supportsColor ? chalk.bold(top) : top);
+        return [
+            supportsColor ? chalk.bold(top) : top,
 
-        console.log(matrix.map((row) => side + row.map((value) => (value ? colors[value - 1].repeat(2) : "  ")).join("") + side).join("\n"));
+            ...matrix.map((row) => side + row.map((value) => (value ? colors[value - 1].repeat(2) : "  ")).join("") + side),
 
-        console.log(supportsColor ? chalk.bold(bottom) : bottom);
+            supportsColor ? chalk.bold(bottom) : bottom,
+        ];
     }
 
     function printScore() {
@@ -175,7 +182,25 @@ interface Player {
             });
         });
 
-        drawMatrix(output);
+        console.log(drawMatrix(output).join("\n"));
+
+        console.log(
+            drawMatrix(
+                (() => {
+                    const matrix = [...nextPiece.map((row) => [...row])];
+
+                    while (matrix.length < 4) matrix.push(new Array(4).fill(0));
+
+                    matrix.forEach((row) => {
+                        while (row.length < 4) row.push(0);
+                    });
+
+                    return matrix;
+                })()
+            )
+                .map((string, i) => `${i === 0 ? (supportsColor ? chalk.bold("next:") : "next:") + " ".repeat(16 - `next:`.length) : " ".repeat(16)}${string}`)
+                .join("\n")
+        );
     }
 
     function merge(arena: number[][], player: Player) {
@@ -218,7 +243,11 @@ interface Player {
         if (collide(arena, player)) {
             player.pos.y--;
             merge(arena, player);
+
             playerReset();
+
+            nextPiece = createRandomPiece();
+
             arenaSweep();
         }
 
@@ -233,10 +262,12 @@ interface Player {
         }
     }
 
-    function playerReset() {
-        const pieces = "TJLOSZI";
+    function createRandomPiece() {
+        return createPiece(pieces[(pieces.length * Math.random()) | 0] as Parameters<typeof createPiece>[0])!;
+    }
 
-        player.matrix = createPiece(pieces[(pieces.length * Math.random()) | 0] as Parameters<typeof createPiece>[0])!;
+    function playerReset() {
+        player.matrix = nextPiece;
         player.pos.y = 0;
         player.pos.x = ((arena[0].length / 2) | 0) - ((player.matrix[0].length / 2) | 0);
 
@@ -295,8 +326,10 @@ interface Player {
     process.stdin.resume();
 
     const colors =
-        supportsColor && !opts.color
+        supportsColor && !opts.color && !opts.ascii
             ? [chalk.bgBlue(" "), chalk.bgGreenBright(" "), chalk.bgRedBright(" "), chalk.bgMagenta(" "), chalk.bgYellowBright(" "), chalk.bgCyan(" "), chalk.bgGray(" ")]
+            : opts.ascii
+            ? ["@", "#", "$", "%", "+", "&", "*"]
             : ["#", "#", "#", "#", "#", "#", "#"];
 
     const arena = createMatrix(12, 20);
@@ -306,6 +339,10 @@ interface Player {
         pos: { x: 0, y: 0 },
         score: 0,
     };
+
+    const pieces = "TJLOSZI";
+
+    let nextPiece = createRandomPiece();
 
     playerReset();
 
