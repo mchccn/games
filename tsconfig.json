@@ -18,6 +18,8 @@
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
         "resolveJsonModule": true,
-        "lib": ["esnext"]
-    }
+        "lib": ["esnext", "esnext.asynciterable"]
+    },
+    "include": ["ts/**/*.ts", "env.d.ts"],
+    "exclude": ["node_modules"]
 }
