@@ -295,7 +295,6 @@ keypress(process.stdin);
 
         if (key.name === "left") playerMove(-1);
         else if (key.name === "right") playerMove(1);
-        else if (key.name === "up") player.y--;
         else if (key.name === "space") playerShoot();
         else if (key.name.toLowerCase() === "c" && key.ctrl) process.exit();
     });
