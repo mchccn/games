@@ -239,9 +239,97 @@ keypress(process.stdin);
             });
         }
     }
+    class Spider {
+        public static readonly CODE = 4;
+
+        public static readonly TICKS = {
+            MOVE: 4,
+            STAY: 4,
+        };
+
+        public x;
+        public y;
+
+        public lastTick = 0;
+
+        public vec: [number, number];
+
+        public ticksLeft = Spider.TICKS.MOVE;
+
+        public stay = 0;
+
+        public constructor(public dir: number) {
+            this.x = dir < 0 ? width - 1 : 0;
+
+            this.vec = [dir, 0];
+
+            this.y = Math.floor((Math.random() * width) / 2) + Math.floor(width / 2);
+        }
+
+        public move() {
+            if (this.ticksLeft > 0) {
+                if (this.stay > 0) {
+                    this.stay--;
+                } else {
+                    this.ticksLeft--;
+
+                    const [x, y] = this.vec;
+
+                    this.x += x;
+                    this.y += y;
+                }
+            } else {
+                const dx = player.x - this.x;
+                const dy = player.y - this.y;
+
+                const d = Math.sqrt(dx * dx + dy * dy);
+
+                const vectors = [
+                    [1, 0],
+                    [-1, 0],
+                    [0, 1],
+                    [0, -1],
+                    [1, 1],
+                    [-1, -1],
+                    [1, -1],
+                    [-1, 1],
+                ] as [number, number][];
+
+                let [x, y] = mostSimilarVector([dx / d, dy / d], vectors) ?? [0, 0];
+
+                const used = [[x, y]];
+
+                while (typeof world[this.x + x * Spider.TICKS.MOVE] === "undefined") {
+                    used.push([x, y]);
+
+                    [x, y] = mostSimilarVector(
+                        [dx / d, dy / d],
+                        vectors.filter(([tx, ty]) => !used.some(([x, y]) => tx === x && ty === y))
+                    ) ?? [0, 0];
+                }
+
+                this.vec = [x, y];
+
+                this.ticksLeft = Spider.TICKS.MOVE;
+                this.stay = Spider.TICKS.STAY;
+            }
+
+            if (this.x === player.x && this.y === player.y) takeDamage();
+        }
+    }
 
     function scale(value: number, [a1, a2]: [number, number], [b1, b2]: [number, number]) {
         return ((value - a1) * (b2 - b1)) / (a2 - a1) + b1;
+    }
+
+    function mostSimilarVector([tx, ty]: [number, number], vectors: [number, number][]) {
+        const scores = vectors.map(([x, y]) => Math.abs(tx - x) + Math.abs(ty - y));
+
+        const min = Math.min(...scores);
+
+        const potential = scores.flatMap((score, i) => (score === min ? [vectors[i]] : []));
+
+        return potential[Math.floor(Math.random() * potential.length)];
     }
 
     function collide(arena: number[][], target: (number | undefined)[][], offset = { x: 0, y: 0 }) {
@@ -331,6 +419,8 @@ keypress(process.stdin);
 
         scorpions.forEach((s) => merge(output, [[Scorpion.CODE]], s));
 
+        spiders.forEach((s) => merge(output, [[Spider.CODE]], s));
+
         merge(output, [[1]], player);
 
         console.log(drawMatrix(output).join("\n"));
@@ -416,6 +506,18 @@ keypress(process.stdin);
         });
     }
 
+    function moveSpiders() {
+        spiders.forEach((s, i) => {
+            if (Date.now() - s.lastTick >= 1000 / 7.5) {
+                s.move();
+
+                if (s.x < 0 || s.x >= width || s.y < 0 || s.y >= height) spiders.splice(i, 1);
+
+                s.lastTick = Date.now();
+            }
+        });
+    }
+
     function updateBullets() {
         outer: for (let i = 0; i < player.bullets.length; i++) {
             const b = player.bullets[i];
@@ -489,6 +591,25 @@ keypress(process.stdin);
                     }
                 }
 
+                for (let j = 0; j < spiders.length; j++) {
+                    const s = spiders[j];
+
+                    if (b.x === s.x && b.y === s.y) {
+                        spiders.splice(j, 1);
+
+                        const dx = player.x - s.x;
+                        const dy = player.y - s.y;
+
+                        const d = Math.sqrt(dx * dx + dy * dy);
+
+                        addScore(Math.max(Math.floor(((height - d) * 33.333) / 300) * 300, 300));
+
+                        player.bullets.splice(i, 1);
+
+                        continue outer;
+                    }
+                }
+
                 b.lastTick = Date.now();
             }
         }
@@ -546,7 +667,7 @@ keypress(process.stdin);
         lastBabySpawn = Date.now();
     }
 
-    let wave = 95;
+    let wave = -1;
 
     function nextWave() {
         const length = maxLength - (++wave % maxLength);
@@ -558,6 +679,8 @@ keypress(process.stdin);
         if (wave > maxBoost * maxLength) win();
 
         centipedes.push(new Centipede(length, Math.sign(Math.random() - 0.5), Math.floor(wave / maxLength)));
+
+        lastBabySpawn = 0;
     }
 
     function win() {
@@ -570,6 +693,7 @@ keypress(process.stdin);
 
     let lastFlea = Date.now();
     let lastScorpion = 0;
+    let lastSpider = Date.now();
 
     let lastBabySpawn = 0;
 
@@ -584,6 +708,8 @@ keypress(process.stdin);
 
         moveScorpions();
 
+        moveSpiders();
+
         if (!centipedes.filter(({ size }) => size !== 1).length) nextWave();
 
         if (centipedes.filter(({ size }) => size !== 1).every(({ isLooping }) => isLooping)) spawnBabyCentipede();
@@ -596,6 +722,12 @@ keypress(process.stdin);
             scorpions.push(new Scorpion(Math.sign(Math.random() - 0.5)));
 
             lastScorpion = Date.now();
+        }
+
+        if (Date.now() - lastSpider - Math.floor(Math.random() * 1000) > 15000) {
+            spiders.push(new Spider(Math.sign(Math.random() - 0.5)));
+
+            lastSpider = Date.now();
         }
 
         if (renderCounter >= 1000 / fps) {
@@ -665,6 +797,7 @@ keypress(process.stdin);
     const mushrooms = [] as Mushroom[];
     const fleas = [] as Flea[];
     const scorpions = [] as Scorpion[];
+    const spiders = [] as Spider[];
 
     nextWave();
 
