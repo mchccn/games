@@ -230,7 +230,7 @@ keypress(process.stdin);
 
             const positions = mushrooms.filter(({ poisoned }) => !poisoned).map(({ y }) => y);
 
-            this.y = positions[Math.floor(Math.random() * positions.length - 1)];
+            this.y = positions[Math.floor(Math.random() * positions.length)];
         }
 
         public move() {
@@ -324,8 +324,6 @@ keypress(process.stdin);
 
         player.bullets.forEach((b) => merge(output, [[2]], b));
 
-        merge(output, [[1]], player);
-
         mushrooms.forEach((m) => merge(output, [[m.poisoned ? Mushroom.POISONED : Mushroom.CODE]], m));
 
         centipedes
@@ -336,6 +334,8 @@ keypress(process.stdin);
         fleas.forEach((f) => merge(output, [[Flea.CODE]], f));
 
         scorpions.forEach((s) => merge(output, [[Scorpion.CODE]], s));
+
+        merge(output, [[1]], player);
 
         console.log(drawMatrix(output).join("\n"));
     }
@@ -418,7 +418,7 @@ keypress(process.stdin);
             if (Date.now() - s.lastTick >= 1000 / 7.5) {
                 s.move();
 
-                if (s.x < 0 || s.x > width) scorpions.splice(i, 1);
+                if (s.x < 0 || s.x >= width) scorpions.splice(i, 1);
 
                 s.lastTick = Date.now();
             }
@@ -459,7 +459,7 @@ keypress(process.stdin);
                         m.health--;
 
                         if (m.health <= 0) {
-                            player.score += m.poisoned ? 5 : 1;
+                            addScore(m.poisoned ? 5 : 1);
 
                             mushrooms.splice(i, 1);
                         }
@@ -483,7 +483,7 @@ keypress(process.stdin);
                         f.health--;
 
                         if (f.health <= 0) {
-                            player.score += 200;
+                            addScore(200);
 
                             fleas.splice(i, 1);
                         }
@@ -506,7 +506,7 @@ keypress(process.stdin);
                     if (b.x === s.x && b.y === s.y) {
                         scorpions.splice(i, 1);
 
-                        player.score += 1000;
+                        addScore(1000);
 
                         b.stacked--;
 
@@ -528,7 +528,7 @@ keypress(process.stdin);
     function splitCentipede(centipede: Centipede, segment: Segment) {
         const index = centipede.segments.findIndex((s) => s === segment);
 
-        player.score += segment === centipede.segments[0] ? 100 : 10;
+        addScore(segment === centipede.segments[0] ? 100 : 10);
 
         if (segment.y < height - 2 && !mushrooms.find(({ x, y }) => x === segment.x && y === segment.y)) mushrooms.push(new Mushroom(segment.x, segment.y));
 
@@ -549,6 +549,40 @@ keypress(process.stdin);
         if (second.length) centipedes.push(Centipede.from(second, centipede.dir));
     }
 
+    let thresholds = new Array(100).fill(void 0).map((_, i) => (i + 1) * 10000);
+
+    function addScore(score: number) {
+        player.score += score;
+
+        if (player.score > thresholds[0]) {
+            player.lives++;
+
+            thresholds.shift();
+
+            if (!thresholds.length) win();
+        }
+    }
+
+    let wave = -1;
+
+    function nextWave() {
+        const length = maxLength - (++wave % maxLength);
+
+        addScore(wave * 10);
+
+        if (maxLength - length) centipedes.push(new Centipede(maxLength - length, Math.sign(Math.random() - 0.5), Math.floor(wave / maxLength)));
+
+        if (wave >= maxBoost * maxLength) win();
+
+        centipedes.push(new Centipede(length, Math.sign(Math.random() - 0.5), Math.floor(wave / maxLength)));
+    }
+
+    function win() {
+        printScore();
+
+        process.exit();
+    }
+
     let renderCounter = 0;
 
     let lastFlea = Date.now();
@@ -565,11 +599,13 @@ keypress(process.stdin);
 
         moveScorpions();
 
-        if (mushrooms.filter(({ poisoned }) => !poisoned).length <= 5 && Date.now() - lastFlea - Math.floor(Math.random() * 1000) > 10000) {
+        if (!centipedes.length) nextWave();
+
+        if (mushrooms.filter(({ poisoned }) => !poisoned).length <= 5 && Date.now() - lastFlea - Math.floor(Math.random() * 1000) > 5000) {
             fleas.push(new Flea());
 
             lastFlea = Date.now();
-        } else if (mushrooms.filter(({ poisoned }) => !poisoned).length > 5 && Date.now() - lastScorpion - Math.floor(Math.random() * 1000) > 15000) {
+        } else if (mushrooms.filter(({ poisoned }) => !poisoned).length > 5 && Date.now() - lastScorpion - Math.floor(Math.random() * 1000) > 10000) {
             scorpions.push(new Scorpion(Math.sign(Math.random() - 0.5)));
 
             lastScorpion = Date.now();
@@ -636,10 +672,12 @@ keypress(process.stdin);
     const maxLength = 12;
     const maxBoost = 8;
 
-    const centipedes = [new Centipede(10, 1)] as Centipede[];
+    const centipedes = [] as Centipede[];
     const mushrooms = [] as Mushroom[];
     const fleas = [] as Flea[];
     const scorpions = [] as Scorpion[];
+
+    nextWave();
 
     update();
 
