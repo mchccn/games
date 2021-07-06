@@ -23,7 +23,7 @@ keypress(process.stdin);
     const { supportsColor } = chalk;
 
     const centipede = `\
-██████╗███████╗███╗   ██╗████████╗██╗██████╗ ███████╗██████╗ ███████╗
+ ██████╗███████╗███╗   ██╗████████╗██╗██████╗ ███████╗██████╗ ███████╗
 ██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║██╔══██╗██╔════╝██╔══██╗██╔════╝
 ██║     █████╗  ██╔██╗ ██║   ██║   ██║██████╔╝█████╗  ██║  ██║█████╗  
 ██║     ██╔══╝  ██║╚██╗██║   ██║   ██║██╔═══╝ ██╔══╝  ██║  ██║██╔══╝  
@@ -80,6 +80,32 @@ keypress(process.stdin);
         }
 
         public move() {
+            const annoy = (up: boolean) => {
+                head.x += this.annoyingDir * (up ? -1 : 1);
+
+                if (collide(world, [[Segment.CODE]], head)) {
+                    head.x -= this.annoyingDir * (up ? -1 : 1);
+
+                    up ? head.y++ : head.y--;
+
+                    this.isInUpperHalf = !up;
+                }
+            };
+
+            const beAnnoying = () => {
+                head.y--;
+
+                this.isPoisoned = false;
+
+                this.isBeingAnnoying = true;
+
+                this.annoyingDir = this.dir;
+
+                if (this.speedBoost > 4) this.speedBoost = 4;
+
+                annoy(false);
+            };
+
             const moveDown = () => {
                 head.x -= this.dir;
 
@@ -87,17 +113,7 @@ keypress(process.stdin);
 
                 head.y++;
 
-                if (collide(arena, [[Segment.CODE]], head)) {
-                    head.y--;
-
-                    this.isPoisoned = false;
-
-                    this.isBeingAnnoying = true;
-
-                    this.annoyingDir = this.dir;
-
-                    if (this.speedBoost > 4) this.speedBoost = 4;
-                }
+                if (collide(world, [[Segment.CODE]], head)) beAnnoying();
             };
 
             const [head, ...segments] = this.segments;
@@ -105,32 +121,12 @@ keypress(process.stdin);
             let { x, y } = head;
 
             if (this.isBeingAnnoying) {
-                if (this.isInUpperHalf) {
-                    head.x -= this.annoyingDir;
-
-                    if (collide(arena, [[Segment.CODE]], head)) {
-                        head.x += this.annoyingDir;
-
-                        head.y++;
-
-                        this.isInUpperHalf = false;
-                    }
-                } else {
-                    head.x += this.annoyingDir;
-
-                    if (collide(arena, [[Segment.CODE]], head)) {
-                        head.x -= this.annoyingDir;
-
-                        head.y--;
-
-                        this.isInUpperHalf = true;
-                    }
-                }
+                annoy(this.isInUpperHalf);
             } else {
                 if (this.isPoisoned) head.y++;
                 else head.x += this.dir;
 
-                if (collide(arena, [[Segment.CODE]], head)) moveDown();
+                if (collide(world, [[Segment.CODE]], head)) this.isPoisoned ? beAnnoying() : moveDown();
 
                 for (const mushroom of mushrooms) {
                     if (mushroom.x === head.x && mushroom.y === head.y) {
@@ -186,8 +182,8 @@ keypress(process.stdin);
     }
 
     class Mushroom {
-        public static readonly CODE = 4;
-        public static readonly POISONED = 5;
+        public static readonly CODE = 5;
+        public static readonly POISONED = 6;
 
         public static readonly HEALTH = 4;
 
@@ -195,7 +191,61 @@ keypress(process.stdin);
 
         public poisoned = false;
 
-        constructor(public x: number, public y: number) {}
+        public constructor(public x: number, public y: number) {}
+    }
+
+    class Flea {
+        public static readonly CODE = 8;
+
+        public static readonly HEALTH = 2;
+
+        public health = Flea.HEALTH;
+
+        public x;
+        public y = 0;
+
+        public lastTick = 0;
+
+        public constructor() {
+            this.x = Math.floor(Math.random() * width);
+        }
+
+        public move() {
+            this.y++;
+
+            if (this.x === player.x && this.y === player.y) takeDamage();
+        }
+    }
+
+    class Scorpion {
+        public static readonly CODE = 7;
+
+        public x;
+        public y;
+
+        public lastTick = 0;
+
+        public constructor(public dir: number) {
+            this.x = dir < 0 ? width - 1 : 0;
+
+            const positions = mushrooms.filter(({ poisoned }) => !poisoned).map(({ y }) => y);
+
+            this.y = positions[Math.floor(Math.random() * positions.length - 1)];
+        }
+
+        public move() {
+            this.x += this.dir;
+
+            if (this.x === player.x && this.y === player.y) takeDamage();
+
+            mushrooms.forEach((m) => {
+                if (this.x === m.x && this.y === m.y) {
+                    m.poisoned = true;
+
+                    m.health = Mushroom.HEALTH;
+                }
+            });
+        }
     }
 
     function collide(arena: number[][], target: (number | undefined)[][], offset = { x: 0, y: 0 }) {
@@ -270,11 +320,11 @@ keypress(process.stdin);
 
         printLives();
 
-        const output = [...arena.map((row) => [...row])];
-
-        merge(output, [[1]], player);
+        const output = [...world.map((row) => [...row])];
 
         player.bullets.forEach((b) => merge(output, [[2]], b));
+
+        merge(output, [[1]], player);
 
         mushrooms.forEach((m) => merge(output, [[m.poisoned ? Mushroom.POISONED : Mushroom.CODE]], m));
 
@@ -283,13 +333,17 @@ keypress(process.stdin);
             .flat()
             .forEach((s) => merge(output, [[Segment.CODE]], s));
 
+        fleas.forEach((f) => merge(output, [[Flea.CODE]], f));
+
+        scorpions.forEach((s) => merge(output, [[Scorpion.CODE]], s));
+
         console.log(drawMatrix(output).join("\n"));
     }
 
     function playerMoveX(dir: number) {
         player.x += dir;
 
-        if (collide(arena, [[1]], player)) {
+        if (collide(world, [[1]], player)) {
             player.x -= dir;
         }
     }
@@ -297,21 +351,21 @@ keypress(process.stdin);
     function playerMoveY(dir: number) {
         player.y += dir;
 
-        if (collide(arena, [[1]], player)) {
+        if (collide(world, [[1]], player)) {
             player.y -= dir;
         }
     }
 
     function playerShoot() {
         if (Date.now() - player.lastShot > 250) {
-            const b = player.bullets.find(({ x, y }) => x === player.x && y === player.y - 1);
+            const b = player.bullets.find(({ x, y }) => x === player.x && y === player.y);
 
             if (b) {
                 b.stacked++;
             } else {
                 player.bullets.push({
                     x: player.x,
-                    y: player.y - 1,
+                    y: player.y,
                     stacked: 1,
                     lastTick: Date.now(),
                 });
@@ -343,6 +397,30 @@ keypress(process.stdin);
                 c.move();
 
                 c.lastTick = Date.now();
+            }
+        });
+    }
+
+    function moveFleas() {
+        fleas.forEach((f, i) => {
+            if (Date.now() - f.lastTick >= 1000 / (f.health <= 1 ? 15 : 7.5)) {
+                f.move();
+
+                if (f.y >= height) fleas.splice(i, 1);
+
+                f.lastTick = Date.now();
+            }
+        });
+    }
+
+    function moveScorpions() {
+        scorpions.forEach((s, i) => {
+            if (Date.now() - s.lastTick >= 1000 / 7.5) {
+                s.move();
+
+                if (s.x < 0 || s.x > width) scorpions.splice(i, 1);
+
+                s.lastTick = Date.now();
             }
         });
     }
@@ -398,6 +476,50 @@ keypress(process.stdin);
                     }
                 }
 
+                for (let i = 0; i < fleas.length; i++) {
+                    const f = fleas[i];
+
+                    if (b.x === f.x && b.y === f.y) {
+                        f.health--;
+
+                        if (f.health <= 0) {
+                            player.score += 200;
+
+                            fleas.splice(i, 1);
+                        }
+
+                        b.stacked--;
+
+                        if (b.stacked <= 0) {
+                            player.bullets.splice(i, 1);
+
+                            continue outer;
+                        }
+
+                        break;
+                    }
+                }
+
+                for (let i = 0; i < scorpions.length; i++) {
+                    const s = scorpions[i];
+
+                    if (b.x === s.x && b.y === s.y) {
+                        scorpions.splice(i, 1);
+
+                        player.score += 1000;
+
+                        b.stacked--;
+
+                        if (b.stacked <= 0) {
+                            player.bullets.splice(i, 1);
+
+                            continue outer;
+                        }
+
+                        break;
+                    }
+                }
+
                 b.lastTick = Date.now();
             }
         }
@@ -408,7 +530,7 @@ keypress(process.stdin);
 
         player.score += segment === centipede.segments[0] ? 100 : 10;
 
-        if (segment.y < height - 2) mushrooms.push(new Mushroom(segment.x, segment.y));
+        if (segment.y < height - 2 && !mushrooms.find(({ x, y }) => x === segment.x && y === segment.y)) mushrooms.push(new Mushroom(segment.x, segment.y));
 
         const [first, second] = [centipede.segments.slice(0, index), centipede.segments.slice(index + 1)];
 
@@ -429,12 +551,29 @@ keypress(process.stdin);
 
     let renderCounter = 0;
 
+    let lastFlea = Date.now();
+    let lastScorpion = 0;
+
     function update() {
         renderCounter += 1000 / 60;
 
         updateBullets();
 
         moveCentipedes();
+
+        moveFleas();
+
+        moveScorpions();
+
+        if (mushrooms.filter(({ poisoned }) => !poisoned).length <= 5 && Date.now() - lastFlea - Math.floor(Math.random() * 1000) > 10000) {
+            fleas.push(new Flea());
+
+            lastFlea = Date.now();
+        } else if (mushrooms.filter(({ poisoned }) => !poisoned).length > 5 && Date.now() - lastScorpion - Math.floor(Math.random() * 1000) > 15000) {
+            scorpions.push(new Scorpion(Math.sign(Math.random() - 0.5)));
+
+            lastScorpion = Date.now();
+        }
 
         if (renderCounter >= 1000 / fps) {
             draw();
@@ -461,7 +600,7 @@ keypress(process.stdin);
     const height = 32;
 
     const colors =
-        supportsColor && !opts.color && !opts.ascii
+        supportsColor && !opts.color
             ? [
                   " ",
                   chalk.bgCyan(" "),
@@ -471,10 +610,11 @@ keypress(process.stdin);
                   chalk.bgBlue(" "),
                   chalk.bgCyan(" "),
                   chalk.bgYellowBright(" "),
+                  chalk.bgGray(" "),
               ].map((c) => c.repeat(2))
-            : ["  ", "◢◣", "▕▏", "##", "@@", "&&", "$$", "**"];
+            : ["  ", "◢◣", "▕▏", "##", "@@", "&&", "$$", "**", "^^"];
 
-    const arena = createMatrix(width, height);
+    const world = createMatrix(width, height);
 
     const player = {
         x: Math.floor(width / 2),
@@ -498,6 +638,8 @@ keypress(process.stdin);
 
     const centipedes = [new Centipede(10, 1)] as Centipede[];
     const mushrooms = [] as Mushroom[];
+    const fleas = [] as Flea[];
+    const scorpions = [] as Scorpion[];
 
     update();
 
