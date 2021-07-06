@@ -61,11 +61,11 @@ keypress(process.stdin);
 
         public isPoisoned = false;
 
-        public isBeingAnnoying = false;
+        public isLooping = false;
 
-        public annoyingDir = 0;
+        public isGoingUp = false;
 
-        public isInUpperHalf = false;
+        public lastRegen = Date.now();
 
         public constructor(length: number, public dir: number, public speedBoost = 0) {
             const x = Math.floor(Math.random() * (width - length));
@@ -75,69 +75,55 @@ keypress(process.stdin);
             if (dir > 0) this.segments.reverse();
         }
 
-        public size() {
+        public get size() {
             return this.segments.length;
         }
 
         public move() {
-            const annoy = (up: boolean) => {
-                head.x += this.annoyingDir * (up ? -1 : 1);
-
-                if (collide(world, [[Segment.CODE]], head)) {
-                    head.x -= this.annoyingDir * (up ? -1 : 1);
-
-                    up ? head.y++ : head.y--;
-
-                    this.isInUpperHalf = !up;
-                }
-            };
-
-            const beAnnoying = () => {
-                head.y--;
+            const startLooping = () => {
+                this.isGoingUp ? head.y++ : head.y--;
 
                 this.isPoisoned = false;
 
-                this.isBeingAnnoying = true;
+                this.isLooping = true;
 
-                this.annoyingDir = this.dir;
-
-                if (this.speedBoost > 4) this.speedBoost = 4;
-
-                annoy(false);
+                this.isGoingUp = !this.isGoingUp;
             };
 
-            const moveDown = () => {
+            const move = () => {
                 head.x -= this.dir;
 
                 this.dir *= -1;
 
-                head.y++;
+                this.isGoingUp ? head.y-- : head.y++;
 
-                if (collide(world, [[Segment.CODE]], head)) beAnnoying();
+                if (collide(world, [[Segment.CODE]], head)) {
+                    if (head.y <= 0 || head.y >= height - 1) {
+                        this.isGoingUp ? (head.y += 2) : (head.y -= 2);
+
+                        this.isGoingUp = !this.isGoingUp;
+                    } else head.x += this.dir;
+                }
             };
 
             const [head, ...segments] = this.segments;
 
             let { x, y } = head;
 
-            if (this.isBeingAnnoying) {
-                annoy(this.isInUpperHalf);
-            } else {
-                if (this.isPoisoned) head.y++;
-                else head.x += this.dir;
+            if (this.isPoisoned) this.isGoingUp ? head.y-- : head.y++;
+            else head.x += this.dir;
 
-                if (collide(world, [[Segment.CODE]], head)) this.isPoisoned ? beAnnoying() : moveDown();
+            if (collide(world, [[Segment.CODE]], head)) this.isPoisoned ? startLooping() : move();
 
-                for (const mushroom of mushrooms) {
-                    if (mushroom.x === head.x && mushroom.y === head.y) {
-                        if (this.isPoisoned) this.isPoisoned = false;
+            for (const mushroom of mushrooms) {
+                if (mushroom.x === head.x && mushroom.y === head.y) {
+                    if (this.isPoisoned) this.isPoisoned = false;
 
-                        if (mushroom.poisoned) this.isPoisoned = true;
+                    if (mushroom.poisoned) this.isPoisoned = true;
 
-                        moveDown();
+                    move();
 
-                        break;
-                    }
+                    break;
                 }
             }
 
@@ -149,6 +135,12 @@ keypress(process.stdin);
 
                 x = temp.x;
                 y = temp.y;
+            }
+
+            if (Date.now() - this.lastRegen >= 10000 && this.size < maxLength) {
+                this.segments.push(new Segment(this, x, y));
+
+                this.lastRegen = Date.now();
             }
 
             for (let i = 0; i < this.segments.length; i++) {
@@ -163,7 +155,7 @@ keypress(process.stdin);
         }
 
         public get speed() {
-            return maxLength - (this.segments.length - 1) + this.speedBoost;
+            return maxLength - (this.segments.length - 1) + scale(this.speedBoost, [0, maxBoost], [0, maxBoost + maxLength]);
         }
 
         public clone() {
@@ -246,6 +238,10 @@ keypress(process.stdin);
                 }
             });
         }
+    }
+
+    function scale(value: number, [a1, a2]: [number, number], [b1, b2]: [number, number]) {
+        return ((value - a1) * (b2 - b1)) / (a2 - a1) + b1;
     }
 
     function collide(arena: number[][], target: (number | undefined)[][], offset = { x: 0, y: 0 }) {
@@ -358,24 +354,19 @@ keypress(process.stdin);
 
     function playerShoot() {
         if (Date.now() - player.lastShot > 250) {
-            const b = player.bullets.find(({ x, y }) => x === player.x && y === player.y);
-
-            if (b) {
-                b.stacked++;
-            } else {
-                player.bullets.push({
-                    x: player.x,
-                    y: player.y,
-                    stacked: 1,
-                    lastTick: Date.now(),
-                });
-            }
+            player.bullets.push({
+                x: player.x,
+                y: player.y,
+                lastTick: Date.now(),
+            });
 
             player.lastShot = Date.now();
         }
     }
 
     function takeDamage() {
+        if (player.isInvulnerable) return;
+
         player.lives--;
 
         if (player.lives <= 0) {
@@ -393,7 +384,7 @@ keypress(process.stdin);
 
     function moveCentipedes() {
         centipedes.forEach((c) => {
-            if (Date.now() - c.lastTick >= 1000 - c.speed * 50) {
+            if (Date.now() - c.lastTick >= 1050 - c.speed * 50) {
                 c.move();
 
                 c.lastTick = Date.now();
@@ -439,21 +430,15 @@ keypress(process.stdin);
                         if (b.x === s.x && b.y === s.y) {
                             splitCentipede(c, s);
 
-                            b.stacked--;
+                            player.bullets.splice(i, 1);
 
-                            if (b.stacked <= 0) {
-                                player.bullets.splice(i, 1);
-
-                                continue outer;
-                            }
-
-                            break;
+                            continue outer;
                         }
                     }
                 }
 
-                for (let i = 0; i < mushrooms.length; i++) {
-                    const m = mushrooms[i];
+                mushrooms: for (let j = 0; j < mushrooms.length; j++) {
+                    const m = mushrooms[j];
 
                     if (b.x === m.x && b.y === m.y) {
                         m.health--;
@@ -461,23 +446,19 @@ keypress(process.stdin);
                         if (m.health <= 0) {
                             addScore(m.poisoned ? 5 : 1);
 
-                            mushrooms.splice(i, 1);
+                            mushrooms.splice(j, 1);
+
+                            break mushrooms;
                         }
 
-                        b.stacked--;
+                        player.bullets.splice(i, 1);
 
-                        if (b.stacked <= 0) {
-                            player.bullets.splice(i, 1);
-
-                            continue outer;
-                        }
-
-                        break;
+                        break mushrooms;
                     }
                 }
 
-                for (let i = 0; i < fleas.length; i++) {
-                    const f = fleas[i];
+                for (let j = 0; j < fleas.length; j++) {
+                    const f = fleas[j];
 
                     if (b.x === f.x && b.y === f.y) {
                         f.health--;
@@ -485,38 +466,26 @@ keypress(process.stdin);
                         if (f.health <= 0) {
                             addScore(200);
 
-                            fleas.splice(i, 1);
+                            fleas.splice(j, 1);
                         }
 
-                        b.stacked--;
+                        player.bullets.splice(i, 1);
 
-                        if (b.stacked <= 0) {
-                            player.bullets.splice(i, 1);
-
-                            continue outer;
-                        }
-
-                        break;
+                        continue outer;
                     }
                 }
 
-                for (let i = 0; i < scorpions.length; i++) {
-                    const s = scorpions[i];
+                for (let j = 0; j < scorpions.length; j++) {
+                    const s = scorpions[j];
 
                     if (b.x === s.x && b.y === s.y) {
-                        scorpions.splice(i, 1);
+                        scorpions.splice(j, 1);
 
                         addScore(1000);
 
-                        b.stacked--;
+                        player.bullets.splice(i, 1);
 
-                        if (b.stacked <= 0) {
-                            player.bullets.splice(i, 1);
-
-                            continue outer;
-                        }
-
-                        break;
+                        continue outer;
                     }
                 }
 
@@ -530,7 +499,7 @@ keypress(process.stdin);
 
         addScore(segment === centipede.segments[0] ? 100 : 10);
 
-        if (segment.y < height - 2 && !mushrooms.find(({ x, y }) => x === segment.x && y === segment.y)) mushrooms.push(new Mushroom(segment.x, segment.y));
+        if (segment.y < height && !mushrooms.find(({ x, y }) => x === segment.x && y === segment.y)) mushrooms.push(new Mushroom(segment.x, segment.y));
 
         const [first, second] = [centipede.segments.slice(0, index), centipede.segments.slice(index + 1)];
 
@@ -563,7 +532,21 @@ keypress(process.stdin);
         }
     }
 
-    let wave = -1;
+    function spawnBabyCentipede() {
+        if (Date.now() - lastBabySpawn - Math.floor(Math.random() * 1000) < 10000) return;
+
+        const y = Math.floor(Math.random() * height);
+
+        const dir = Math.sign(Math.random() - 0.5);
+
+        const c = new Centipede(1, dir);
+
+        c.segments = [new Segment(c, dir === -1 ? width - 1 : 0, y)];
+
+        lastBabySpawn = Date.now();
+    }
+
+    let wave = 95;
 
     function nextWave() {
         const length = maxLength - (++wave % maxLength);
@@ -572,7 +555,7 @@ keypress(process.stdin);
 
         if (maxLength - length) centipedes.push(new Centipede(maxLength - length, Math.sign(Math.random() - 0.5), Math.floor(wave / maxLength)));
 
-        if (wave >= maxBoost * maxLength) win();
+        if (wave > maxBoost * maxLength) win();
 
         centipedes.push(new Centipede(length, Math.sign(Math.random() - 0.5), Math.floor(wave / maxLength)));
     }
@@ -588,6 +571,8 @@ keypress(process.stdin);
     let lastFlea = Date.now();
     let lastScorpion = 0;
 
+    let lastBabySpawn = 0;
+
     function update() {
         renderCounter += 1000 / 60;
 
@@ -599,7 +584,9 @@ keypress(process.stdin);
 
         moveScorpions();
 
-        if (!centipedes.length) nextWave();
+        if (!centipedes.filter(({ size }) => size !== 1).length) nextWave();
+
+        if (centipedes.filter(({ size }) => size !== 1).every(({ isLooping }) => isLooping)) spawnBabyCentipede();
 
         if (mushrooms.filter(({ poisoned }) => !poisoned).length <= 5 && Date.now() - lastFlea - Math.floor(Math.random() * 1000) > 5000) {
             fleas.push(new Flea());
@@ -652,14 +639,16 @@ keypress(process.stdin);
 
     const world = createMatrix(width, height);
 
+    type PowerUp = "LASER" | "EXTRA_LIFE" | "MACHINE_GUN" | "SLOWER_TIME";
+
     const player = {
+        powerUps: [] as PowerUp[],
         x: Math.floor(width / 2),
         y: height - 1,
         score: 0,
         bullets: [] as {
             x: number;
             y: number;
-            stacked: number;
             lastTick: number;
         }[],
         lives: 3,
