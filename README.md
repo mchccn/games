@@ -14,10 +14,10 @@ available games:
 -   `snake.colored` – snake but with colors
 -   `tetris` – tetris
 -   `spaceinvaders` – simple space invaders
+-   `centipede` – bug blasting classic
 
 coming soon:
 
--   `centipede` – bug blasting classic
 -   `pacman` – famous arcade game
 -   `galaga` – space shoot 'em up
 
