@@ -99,6 +99,8 @@ keypress(process.stdin);
 
                 if (collide(world, [[Segment.CODE]], head)) {
                     if (head.y <= 0 || head.y >= height - 1) {
+                        if (!this.isGoingUp) this.isLooping = true;
+
                         this.isGoingUp ? (head.y += 2) : (head.y -= 2);
 
                         this.isGoingUp = !this.isGoingUp;
@@ -318,6 +320,12 @@ keypress(process.stdin);
         }
     }
 
+    class Powerup {
+        public static readonly CODE = 9;
+
+        public constructor(public x: number, public y: number) {}
+    }
+
     function scale(value: number, [a1, a2]: [number, number], [b1, b2]: [number, number]) {
         return ((value - a1) * (b2 - b1)) / (a2 - a1) + b1;
     }
@@ -426,12 +434,39 @@ keypress(process.stdin);
         console.log(drawMatrix(output).join("\n"));
     }
 
+    function powerup() {
+        const p = powerups.find(({ x, y }) => x === player.x && y === player.y);
+
+        if (p) {
+            const powerups = ["LASER", "EXTRA_LIFE", "MACHINE_GUN", "SLOWER_TIME"] as PowerUpType[];
+
+            executePowerup(powerups[Math.floor(Math.random() * powerups.length)]);
+        }
+    }
+
+    function executePowerup(p: PowerUpType) {
+        switch (p) {
+            case "LASER":
+                player.hasLaser = true;
+            case "EXTRA_LIFE":
+                player.lives++;
+            case "MACHINE_GUN":
+                player.hasMachineGun = true;
+                setTimeout(() => (player.hasMachineGun = false), 2500);
+            case "SLOWER_TIME":
+                player.hasSlowerTime = true;
+                setTimeout(() => (player.hasSlowerTime = false), 5000);
+        }
+    }
+
     function playerMoveX(dir: number) {
         player.x += dir;
 
         if (collide(world, [[1]], player)) {
             player.x -= dir;
         }
+
+        powerup();
     }
 
     function playerMoveY(dir: number) {
@@ -440,15 +475,34 @@ keypress(process.stdin);
         if (collide(world, [[1]], player)) {
             player.y -= dir;
         }
+
+        powerup();
     }
 
     function playerShoot() {
-        if (Date.now() - player.lastShot > 250) {
-            player.bullets.push({
-                x: player.x,
-                y: player.y,
-                lastTick: Date.now(),
-            });
+        if (Date.now() - player.lastShot > (player.hasMachineGun ? 125 : 250)) {
+            if (player.hasLaser) {
+                const length = height;
+
+                player.bullets.push(
+                    ...new Array(length)
+                        .fill(void 0)
+                        .map((_, i) => ({
+                            x: player.x,
+                            y: i,
+                            lastTick: 0,
+                        }))
+                        .filter(({ y }) => y <= player.y)
+                );
+
+                player.hasLaser = false;
+            } else {
+                player.bullets.push({
+                    x: player.x,
+                    y: player.y,
+                    lastTick: Date.now(),
+                });
+            }
 
             player.lastShot = Date.now();
         }
@@ -474,7 +528,7 @@ keypress(process.stdin);
 
     function moveCentipedes() {
         centipedes.forEach((c) => {
-            if (Date.now() - c.lastTick >= 1050 - c.speed * 50) {
+            if (Date.now() - c.lastTick >= (1050 - c.speed * 50) * (player.hasSlowerTime ? 2 : 1)) {
                 c.move();
 
                 c.lastTick = Date.now();
@@ -484,7 +538,7 @@ keypress(process.stdin);
 
     function moveFleas() {
         fleas.forEach((f, i) => {
-            if (Date.now() - f.lastTick >= 1000 / (f.health <= 1 ? 15 : 7.5)) {
+            if (Date.now() - f.lastTick >= (1000 / (f.health <= 1 ? 15 : 7.5)) * (player.hasSlowerTime ? 2 : 1)) {
                 f.move();
 
                 if (f.y >= height) fleas.splice(i, 1);
@@ -496,7 +550,7 @@ keypress(process.stdin);
 
     function moveScorpions() {
         scorpions.forEach((s, i) => {
-            if (Date.now() - s.lastTick >= 1000 / 7.5) {
+            if (Date.now() - s.lastTick >= (1000 / 7.5) * (player.hasSlowerTime ? 2 : 1)) {
                 s.move();
 
                 if (s.x < 0 || s.x >= width) scorpions.splice(i, 1);
@@ -508,7 +562,7 @@ keypress(process.stdin);
 
     function moveSpiders() {
         spiders.forEach((s, i) => {
-            if (Date.now() - s.lastTick >= 1000 / 7.5) {
+            if (Date.now() - s.lastTick >= (1000 / 7.5) * (player.hasSlowerTime ? 2 : 1)) {
                 s.move();
 
                 if (s.x < 0 || s.x >= width || s.y < 0 || s.y >= height) spiders.splice(i, 1);
@@ -634,9 +688,33 @@ keypress(process.stdin);
             }
         }
 
-        if (first.length) centipedes.push(Centipede.from(first, centipede.dir));
+        const { speedBoost, isGoingUp, isLooping, isPoisoned, dir, lastRegen, lastTick } = centipede;
 
-        if (second.length) centipedes.push(Centipede.from(second, centipede.dir));
+        if (first.length)
+            centipedes.push(
+                Object.assign(Centipede.from(first, centipede.dir), {
+                    speedBoost,
+                    isGoingUp,
+                    isLooping,
+                    isPoisoned,
+                    dir,
+                    lastRegen,
+                    lastTick,
+                })
+            );
+
+        if (second.length)
+            centipedes.push(
+                Object.assign(Centipede.from(second, centipede.dir), {
+                    speedBoost,
+                    isGoingUp,
+                    isLooping,
+                    isPoisoned,
+                    dir,
+                    lastRegen,
+                    lastTick,
+                })
+            );
     }
 
     let thresholds = new Array(100).fill(void 0).map((_, i) => (i + 1) * 10000);
@@ -654,15 +732,17 @@ keypress(process.stdin);
     }
 
     function spawnBabyCentipede() {
-        if (Date.now() - lastBabySpawn - Math.floor(Math.random() * 1000) < 10000) return;
+        if (Date.now() - lastBabySpawn - Math.floor(Math.random() * 1000) < 10000 * (player.hasSlowerTime ? 2 : 1)) return;
 
         const y = Math.floor(Math.random() * height);
 
         const dir = Math.sign(Math.random() - 0.5);
 
-        const c = new Centipede(1, dir);
+        const c = new Centipede(1, dir, Math.floor(wave / maxLength));
 
         c.segments = [new Segment(c, dir === -1 ? width - 1 : 0, y)];
+
+        centipedes.push(c);
 
         lastBabySpawn = Date.now();
     }
@@ -714,17 +794,23 @@ keypress(process.stdin);
 
         if (centipedes.filter(({ size }) => size !== 1).every(({ isLooping }) => isLooping)) spawnBabyCentipede();
 
-        if (mushrooms.filter(({ poisoned }) => !poisoned).length <= 5 && Date.now() - lastFlea - Math.floor(Math.random() * 1000) > 5000) {
+        if (
+            mushrooms.filter(({ poisoned }) => !poisoned).length <= 5 &&
+            Date.now() - lastFlea - Math.floor(Math.random() * 1000) > 5000 * (player.hasSlowerTime ? 2 : 1)
+        ) {
             fleas.push(new Flea());
 
             lastFlea = Date.now();
-        } else if (mushrooms.filter(({ poisoned }) => !poisoned).length > 5 && Date.now() - lastScorpion - Math.floor(Math.random() * 1000) > 10000) {
+        } else if (
+            mushrooms.filter(({ poisoned }) => !poisoned).length > 5 &&
+            Date.now() - lastScorpion - Math.floor(Math.random() * 1000) > 10000 * (player.hasSlowerTime ? 2 : 1)
+        ) {
             scorpions.push(new Scorpion(Math.sign(Math.random() - 0.5)));
 
             lastScorpion = Date.now();
         }
 
-        if (Date.now() - lastSpider - Math.floor(Math.random() * 1000) > 15000) {
+        if (Date.now() - lastSpider - Math.floor(Math.random() * 1000) > 20000 * (player.hasSlowerTime ? 2 : 1)) {
             spiders.push(new Spider(Math.sign(Math.random() - 0.5)));
 
             lastSpider = Date.now();
@@ -766,15 +852,18 @@ keypress(process.stdin);
                   chalk.bgCyan(" "),
                   chalk.bgYellowBright(" "),
                   chalk.bgGray(" "),
+                  chalk.red("?"),
               ].map((c) => c.repeat(2))
-            : ["  ", "◢◣", "▕▏", "##", "@@", "&&", "$$", "**", "^^"];
+            : ["  ", "◢◣", "▕▏", "##", "@@", "&&", "$$", "**", "^^", "??"];
 
     const world = createMatrix(width, height);
 
-    type PowerUp = "LASER" | "EXTRA_LIFE" | "MACHINE_GUN" | "SLOWER_TIME";
+    type PowerUpType = "LASER" | "EXTRA_LIFE" | "MACHINE_GUN" | "SLOWER_TIME";
 
     const player = {
-        powerUps: [] as PowerUp[],
+        hasLaser: false,
+        hasMachineGun: false,
+        hasSlowerTime: false,
         x: Math.floor(width / 2),
         y: height - 1,
         score: 0,
@@ -798,6 +887,7 @@ keypress(process.stdin);
     const fleas = [] as Flea[];
     const scorpions = [] as Scorpion[];
     const spiders = [] as Spider[];
+    const powerups = [] as Powerup[];
 
     nextWave();
 
