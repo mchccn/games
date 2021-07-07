@@ -418,6 +418,8 @@ keypress(process.stdin);
 
         mushrooms.forEach((m) => merge(output, [[m.poisoned ? Mushroom.POISONED : Mushroom.CODE]], m));
 
+        powerups.forEach((p) => merge(output, [[Powerup.CODE]], p));
+
         centipedes
             .map(({ segments }) => segments)
             .flat()
@@ -435,12 +437,14 @@ keypress(process.stdin);
     }
 
     function powerup() {
-        const p = powerups.find(({ x, y }) => x === player.x && y === player.y);
+        const i = powerups.findIndex(({ x, y }) => x === player.x && y === player.y);
 
-        if (p) {
-            const powerups = ["LASER", "EXTRA_LIFE", "MACHINE_GUN", "SLOWER_TIME"] as PowerUpType[];
+        if (i >= 0) {
+            const types = ["LASER", "EXTRA_LIFE", "MACHINE_GUN", "SLOWER_TIME"] as PowerUpType[];
 
-            executePowerup(powerups[Math.floor(Math.random() * powerups.length)]);
+            executePowerup(types[Math.floor(Math.random() * types.length)]);
+
+            powerups.splice(i, 1);
         }
     }
 
@@ -775,6 +779,8 @@ keypress(process.stdin);
     let lastScorpion = 0;
     let lastSpider = Date.now();
 
+    let lastPowerup = Date.now();
+
     let lastBabySpawn = 0;
 
     function update() {
@@ -814,6 +820,12 @@ keypress(process.stdin);
             spiders.push(new Spider(Math.sign(Math.random() - 0.5)));
 
             lastSpider = Date.now();
+        }
+
+        if (Date.now() - lastPowerup - Math.floor(Math.random() * 1000) > 30000) {
+            powerups.push(new Powerup(Math.floor(Math.random() * width), Math.floor((Math.random() * height) / 2) + Math.floor(height / 2)));
+
+            lastPowerup = Date.now();
         }
 
         if (renderCounter >= 1000 / fps) {
