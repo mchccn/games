@@ -39,6 +39,123 @@ keypress(process.stdin);
 
     console.clear();
 
+    type Point = [number, number];
+
+    class Dot {
+        public static readonly CODE = 3;
+
+        constructor(public readonly x: number, public readonly y: number) {}
+    }
+
+    class Powerup {
+        public static readonly CODE = 4;
+
+        constructor(public readonly x: number, public readonly y: number) {}
+    }
+
+    class Player {
+        public static CODE = 5;
+
+        public lives = 3;
+        public score = 0;
+
+        public x = 13;
+        public y = 23;
+
+        public dir = [1, 0] as Point;
+
+        public dirQueue = [] as { dir: Point; timestamp: number }[];
+
+        public lastMove = 0;
+
+        public isPoweredUp = false;
+
+        private poweredUpAt = 0;
+
+        public addScore(score: number) {
+            this.score += score;
+        }
+
+        public move() {
+            if (Date.now() - this.lastMove > 1000 / 15) {
+                dir: {
+                    const { dir, timestamp } = this.dirQueue.shift() ?? {};
+
+                    if (dir && timestamp) {
+                        if (Date.now() - timestamp > 1000) break dir;
+
+                        if (
+                            collide(world, [[Player.CODE]], {
+                                x: this.x + dir[0],
+                                y: this.y + dir[1],
+                            })
+                        ) {
+                            this.dirQueue.unshift({ dir, timestamp });
+                        } else this.dir = dir;
+                    }
+                }
+
+                const [x, y] = this.dir;
+
+                this.x += x;
+                this.y += y;
+
+                if (this.x < 0) this.x = width - 1;
+                if (this.x > width - 1) this.x = 0;
+
+                if (collide(world, [[Player.CODE]], this)) {
+                    this.x -= x;
+                    this.y -= y;
+                } else {
+                    check: {
+                        for (const dot of dots) {
+                            if (this.x === dot.x && this.y === dot.y) {
+                                this.score += 10;
+
+                                dots.splice(
+                                    dots.findIndex((d) => d === dot),
+                                    1
+                                );
+
+                                break check;
+                            }
+                        }
+
+                        for (const powerup of powerups) {
+                            if (this.x === powerup.x && this.y === powerup.y) {
+                                this.score += 50;
+
+                                powerups.splice(
+                                    powerups.findIndex((p) => p === powerup),
+                                    1
+                                );
+
+                                this.isPoweredUp = true;
+
+                                this.poweredUpAt = Date.now();
+
+                                setTimeout(() => (this.isPoweredUp = false), this.poweredUpTime);
+
+                                break check;
+                            }
+                        }
+                    }
+                }
+
+                this.lastMove = Date.now();
+            }
+        }
+
+        public get timeLeftUntilVulnerable() {
+            return Math.max(this.poweredUpAt + 2500 - Date.now(), 0);
+        }
+
+        private get poweredUpTime() {
+            // ! Replace temporary time with calculated time from progression.
+            return 2500;
+        }
+    }
+
     function scale(value: number, [a1, a2]: [number, number], [b1, b2]: [number, number]) {
         return ((value - a1) * (b2 - b1)) / (a2 - a1) + b1;
     }
@@ -127,6 +244,10 @@ keypress(process.stdin);
 
         const output = [...world.map((row) => [...row])];
 
+        dots.forEach((d) => merge(output, [[Dot.CODE]], d));
+
+        powerups.forEach((p) => merge(output, [[Powerup.CODE]], p));
+
         merge(output, [[Player.CODE]], player);
 
         console.log(drawMatrix(output).join("\n"));
@@ -170,66 +291,11 @@ keypress(process.stdin);
 
     const colors =
         supportsColor && !opts.color
-            ? [" ", chalk.blueBright("█"), chalk.magentaBright("⎼"), chalk.magentaBright("·"), chalk.magentaBright("o"), chalk.yellowBright("@")]
-            : [" ", "█", "⎼", "·", "o", "@"];
+            ? [" ", chalk.blueBright("█"), chalk.bold.keyword("pink")("⎺"), chalk.yellow("·"), chalk.yellow("o"), chalk.yellowBright("@")]
+            : [" ", "█", "⎺", "·", "o", "@"];
 
-    type Point = [number, number];
-
-    class Player {
-        public static CODE = 5;
-
-        public lives = 3;
-        public score = 0;
-
-        public x = 13;
-        public y = 23;
-
-        public dir = [1, 0] as Point;
-
-        public dirQueue = [] as { dir: Point; timestamp: number }[];
-
-        public lastMove = 0;
-
-        public addScore(score: number) {
-            this.score += score;
-        }
-
-        public move() {
-            if (Date.now() - this.lastMove > 1000 / 15) {
-                dir: {
-                    const { dir, timestamp } = this.dirQueue.shift() ?? {};
-
-                    if (dir && timestamp) {
-                        if (Date.now() - timestamp > 1000) break dir;
-
-                        if (
-                            collide(world, [[Player.CODE]], {
-                                x: this.x + dir[0],
-                                y: this.y + dir[1],
-                            })
-                        ) {
-                            this.dirQueue.unshift({ dir, timestamp });
-                        } else this.dir = dir;
-                    }
-                }
-
-                const [x, y] = this.dir;
-
-                this.x += x;
-                this.y += y;
-
-                if (this.x < 0) this.x = width - 1;
-                if (this.x > width - 1) this.x = 0;
-
-                if (collide(world, [[Player.CODE]], this)) {
-                    this.x -= x;
-                    this.y -= y;
-                }
-
-                this.lastMove = Date.now();
-            }
-        }
-    }
+    const dots = [] as Dot[];
+    const powerups = [] as Powerup[];
 
     const player = new Player();
 
@@ -237,27 +303,27 @@ keypress(process.stdin);
         ############################
         #............##............#
         #.####.#####.##.#####.####.#
-        #.####.#####.##.#####.####.#
+        #*####.#####.##.#####.####*#
         #.####.#####.##.#####.####.#
         #..........................#
         #.####.##.########.##.####.#
         #.####.##.########.##.####.#
         #......##....##....##......#
-        ######.#####.##.#####.######
-        ######.#####.##.#####.######
-        ######.##..........##.######
-        ######.##.###$$###.##.######
-        ######.##.#......#.##.######
-        ..........#......#..........
-        ######.##.#......#.##.######
-        ######.##.########.##.######
-        ######.##..........##.######
-        ######.##.########.##.######
-        ######.##.########.##.######
+        ######.##### ## #####.######
+        ######.##### ## #####.######
+        ######.##          ##.######
+        ######.## ###$$### ##.######
+        ######.## #      # ##.######
+              .   #      #   .      
+        ######.## #      # ##.######
+        ######.## ######## ##.######
+        ######.##          ##.######
+        ######.## ######## ##.######
+        ######.## ######## ##.######
         #............##............#
         #.####.#####.##.#####.####.#
         #.####.#####.##.#####.####.#
-        #...##................##...#
+        #*..##.......  .......##..*#
         ###.##.##.########.##.##.###
         ###.##.##.########.##.##.###
         #......##....##....##......#
@@ -267,7 +333,25 @@ keypress(process.stdin);
         ############################
     `)
         .split("\n")
-        .map((row) => row.split("").map((c) => (c === "#" ? 1 : c === "." ? 0 : c === "$" ? 2 : 0)));
+        .map((row, y) =>
+            row.split("").map((c, x) => {
+                if (c === "#") return 1;
+
+                if (c === "." || c === "*" || c === " ") {
+                    if (c === ".") dots.push(new Dot(x, y));
+
+                    if (c === "*") powerups.push(new Powerup(x, y));
+
+                    return 0;
+                }
+
+                if (c === "$") {
+                    return 2;
+                }
+
+                return 0;
+            })
+        );
 
     const fps = opts.fps ?? 60;
 
